@@ -5,12 +5,14 @@
  */
 import { TextDetector } from './text-detector';
 import { FloatingToolbar } from './floating-toolbar';
+import { PolishHandler } from './polish-handler';
 import { DEFAULT_FEATURES, FeatureToggles, STORAGE_KEY_FEATURES } from '../shared/constants';
 
 const LOG_PREFIX = '[AGENT-ASSIST]';
 
 let detector: TextDetector | null = null;
 let toolbar: FloatingToolbar | null = null;
+let polishHandler: PolishHandler | null = null;
 
 async function loadFeatures(): Promise<FeatureToggles> {
   const result = await chrome.storage.local.get(STORAGE_KEY_FEATURES);
@@ -22,11 +24,11 @@ async function loadFeatures(): Promise<FeatureToggles> {
 }
 
 function startToolbar(): void {
-  if (detector && toolbar) return;
+  if (detector && toolbar && polishHandler) return;
 
   toolbar = new FloatingToolbar({
     onPolishClick: () => {
-      console.log(`${LOG_PREFIX} Polish clicked (handler lands in a later ticket)`);
+      if (polishHandler) void polishHandler.handleClick();
     },
     onScoreClick: () => {
       console.log(`${LOG_PREFIX} Score clicked (handler lands in a later ticket)`);
@@ -34,6 +36,8 @@ function startToolbar(): void {
   });
 
   detector = new TextDetector();
+  polishHandler = new PolishHandler(detector, toolbar);
+
   const activeToolbar = toolbar;
   detector.onChange((field) => {
     if (field) {
@@ -50,6 +54,7 @@ function stopToolbar(): void {
   detector = null;
   toolbar?.destroy();
   toolbar = null;
+  polishHandler = null;
 }
 
 async function syncWithFeatures(): Promise<void> {

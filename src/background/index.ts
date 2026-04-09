@@ -3,4 +3,8 @@
  * Routes messages from content scripts and popup, owns the Claude API client,
  * manages the F3 badge, and registers the F4 right-click context menu.
  */
+import { registerMessageHandler } from './message-handler';
+
 console.log('[AGENT-ASSIST] Service worker started');
+
+registerMessageHandler();

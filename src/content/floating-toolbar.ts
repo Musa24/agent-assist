@@ -2,8 +2,9 @@
  * FloatingToolbar — a shadow-DOM-isolated toolbar that pins itself above
  * (or below, when there's no room) the currently focused text field.
  *
- * Exposes two actions: Polish (F1) and Score (F5). The content script wires
- * the callbacks to the real feature handlers.
+ * Exposes two primary actions — Polish (F1) and Score (F5) — plus a
+ * transient Undo button that the PolishHandler shows after a successful
+ * polish, and a status line for loading / error messages.
  */
 
 const HOST_ID = 'agent-assist-toolbar-host';
@@ -11,10 +12,9 @@ const HOST_ID = 'agent-assist-toolbar-host';
 const TOOLBAR_CSS = `
 .toolbar {
   display: none;
-  flex-direction: row;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
-  padding: 4px;
+  padding: 6px;
   background: #ffffff;
   border: 1px solid #d1d5db;
   border-radius: 8px;
@@ -23,6 +23,12 @@ const TOOLBAR_CSS = `
   font-size: 12px;
   color: #111827;
   user-select: none;
+}
+.actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
 .btn {
   display: inline-flex;
@@ -37,12 +43,13 @@ const TOOLBAR_CSS = `
   font: inherit;
   font-weight: 500;
   line-height: 1;
+  white-space: nowrap;
 }
-.btn:hover {
+.btn:hover:not([disabled]) {
   background: #eff6ff;
   border-color: #bfdbfe;
 }
-.btn:active {
+.btn:active:not([disabled]) {
   background: #dbeafe;
 }
 .btn:focus-visible {
@@ -50,8 +57,29 @@ const TOOLBAR_CSS = `
   outline-offset: 1px;
 }
 .btn[disabled] {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: not-allowed;
+}
+.btn.undo {
+  color: #374151;
+}
+.status {
+  display: none;
+  padding: 2px 6px 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.status.visible {
+  display: block;
+}
+.status.error {
+  color: #dc2626;
+}
+.status.success {
+  color: #16a34a;
+}
+.status.info {
+  color: #374151;
 }
 `;
 
@@ -60,13 +88,21 @@ export interface ToolbarCallbacks {
   onScoreClick: () => void;
 }
 
-const TOOLBAR_HEIGHT_PX = 36;
+type StatusKind = 'error' | 'success' | 'info';
+
+const TOOLBAR_HEIGHT_PX = 44;
 const SPACING_PX = 6;
 const MAX_Z_INDEX = 2147483647;
+const POLISH_LABEL_IDLE = '✨ Polish';
+const POLISH_LABEL_LOADING = '✨ Polishing…';
 
 export class FloatingToolbar {
   private host: HTMLElement | null = null;
   private root: HTMLDivElement | null = null;
+  private actions: HTMLDivElement | null = null;
+  private polishBtn: HTMLButtonElement | null = null;
+  private undoBtn: HTMLButtonElement | null = null;
+  private statusEl: HTMLDivElement | null = null;
   private anchor: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
   private readonly onScrollOrResize = (): void => this.reposition();
@@ -96,6 +132,75 @@ export class FloatingToolbar {
     this.host?.remove();
     this.host = null;
     this.root = null;
+    this.actions = null;
+    this.polishBtn = null;
+    this.undoBtn = null;
+    this.statusEl = null;
+  }
+
+  // ----- Polish button state -----
+
+  setPolishLoading(loading: boolean): void {
+    this.ensureMounted();
+    if (!this.polishBtn) return;
+    this.polishBtn.disabled = loading;
+    this.polishBtn.textContent = loading ? POLISH_LABEL_LOADING : POLISH_LABEL_IDLE;
+  }
+
+  // ----- Undo button -----
+
+  showUndo(onClick: () => void): void {
+    this.ensureMounted();
+    if (!this.actions) return;
+    this.hideUndo();
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn undo';
+    btn.textContent = '↶ Undo';
+    btn.setAttribute('aria-label', 'Undo polish');
+    btn.addEventListener('mousedown', (event) => event.preventDefault());
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      onClick();
+    });
+    // Insert after Polish button (if present), otherwise at the start.
+    if (this.polishBtn && this.polishBtn.nextSibling) {
+      this.actions.insertBefore(btn, this.polishBtn.nextSibling);
+    } else {
+      this.actions.append(btn);
+    }
+    this.undoBtn = btn;
+  }
+
+  hideUndo(): void {
+    if (!this.undoBtn) return;
+    this.undoBtn.remove();
+    this.undoBtn = null;
+  }
+
+  // ----- Status line -----
+
+  showError(message: string): void {
+    this.setStatus('error', message);
+  }
+
+  showSuccess(message: string): void {
+    this.setStatus('success', message);
+  }
+
+  clearStatus(): void {
+    if (!this.statusEl) return;
+    this.statusEl.className = 'status';
+    this.statusEl.textContent = '';
+  }
+
+  // ----- Mounting -----
+
+  private setStatus(kind: StatusKind, message: string): void {
+    this.ensureMounted();
+    if (!this.statusEl) return;
+    this.statusEl.className = `status visible ${kind}`;
+    this.statusEl.textContent = message;
   }
 
   private ensureMounted(): void {
@@ -103,8 +208,6 @@ export class FloatingToolbar {
 
     const host = document.createElement('div');
     host.id = HOST_ID;
-    // `all: initial` resets any host-page styles; then we re-apply what we
-    // need with !important so page CSS targeting our id can't override.
     host.style.cssText = [
       'all: initial',
       'position: fixed !important',
@@ -126,15 +229,27 @@ export class FloatingToolbar {
     root.setAttribute('role', 'toolbar');
     root.setAttribute('aria-label', 'Agent Assist actions');
 
-    root.append(
-      this.makeButton('✨ Polish', 'Polish draft reply', this.callbacks.onPolishClick),
-      this.makeButton('📊 Score', 'Score draft reply', this.callbacks.onScoreClick),
-    );
+    const actions = document.createElement('div');
+    actions.className = 'actions';
 
+    const polish = this.makeButton(POLISH_LABEL_IDLE, 'Polish draft reply', this.callbacks.onPolishClick);
+    const score = this.makeButton('📊 Score', 'Score draft reply', this.callbacks.onScoreClick);
+    actions.append(polish, score);
+
+    const status = document.createElement('div');
+    status.className = 'status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+
+    root.append(actions, status);
     shadow.appendChild(root);
 
     this.host = host;
     this.root = root;
+    this.actions = actions;
+    this.polishBtn = polish;
+    this.statusEl = status;
+    void score; // score button handled entirely via callbacks, no stored ref needed
   }
 
   private makeButton(label: string, ariaLabel: string, onClick: () => void): HTMLButtonElement {
@@ -143,7 +258,6 @@ export class FloatingToolbar {
     btn.className = 'btn';
     btn.textContent = label;
     btn.setAttribute('aria-label', ariaLabel);
-    // Prevent mousedown from stealing focus from the text field.
     btn.addEventListener('mousedown', (event) => {
       event.preventDefault();
     });
