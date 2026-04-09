@@ -2,18 +2,23 @@ import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 
 /**
- * Multi-entry build for the Insystem / Agent Assist Chrome Extension (MV3).
+ * Main multi-entry build for the Agent Assist Chrome Extension (MV3).
+ *
+ * Builds popup, options, and background into dist/. Popup + options are HTML
+ * entries (ES modules are fine there); background is an ES module service
+ * worker declared as `type: module` in manifest.json.
+ *
+ * The CONTENT SCRIPT is NOT part of this config. Content scripts in MV3
+ * cannot be ES modules, so they need IIFE output — which cannot share chunks
+ * with ES entries. Content is built separately via `vite.config.content.ts`,
+ * chained after this one in the `build` npm script.
  *
  * Layout (dist/):
- *   background/index.js   — service worker (ES module, declared in manifest)
- *   content/index.js      — content script (ES module-safe: no imports/exports)
- *   popup/index.html      — extension popup
- *   options/index.html    — options page
- *   manifest.json, icons/ — copied verbatim from public/
- *
- * We set `root` to `src/` so Vite treats src/popup/index.html and
- * src/options/index.html as natural HTML entries and emits them at the
- * expected subpaths under dist/.
+ *   manifest.json, icons/   — copied from public/
+ *   background/index.js     — service worker (ES module)
+ *   popup/index.{html,js}   — extension popup
+ *   options/index.{html,js} — options page
+ *   content/index.js        — added by vite.config.content.ts (IIFE)
  */
 export default defineConfig({
   root: resolve(__dirname, 'src'),
@@ -28,7 +33,6 @@ export default defineConfig({
         popup: resolve(__dirname, 'src/popup/index.html'),
         options: resolve(__dirname, 'src/options/index.html'),
         background: resolve(__dirname, 'src/background/index.ts'),
-        content: resolve(__dirname, 'src/content/index.ts'),
       },
       output: {
         entryFileNames: '[name]/index.js',

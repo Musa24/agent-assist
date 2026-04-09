@@ -1,6 +1,73 @@
 /**
  * Content script entry point.
- * Injected into supported web pages. Initializes the floating toolbar (F1/F5),
- * sentiment detector (F3), term-lookup handler (F4), and quality scorer (F5).
+ * Injected into supported web pages. Wires the text-field detector to the
+ * floating toolbar and honors the user's feature toggles from storage.
  */
-console.log(`[AGENT-ASSIST] Content script loaded on: ${window.location.hostname}`);
+import { TextDetector } from './text-detector';
+import { FloatingToolbar } from './floating-toolbar';
+import { DEFAULT_FEATURES, FeatureToggles, STORAGE_KEY_FEATURES } from '../shared/constants';
+
+const LOG_PREFIX = '[AGENT-ASSIST]';
+
+let detector: TextDetector | null = null;
+let toolbar: FloatingToolbar | null = null;
+
+async function loadFeatures(): Promise<FeatureToggles> {
+  const result = await chrome.storage.local.get(STORAGE_KEY_FEATURES);
+  const stored = (result as Record<string, unknown>)[STORAGE_KEY_FEATURES];
+  if (stored && typeof stored === 'object') {
+    return { ...DEFAULT_FEATURES, ...(stored as Partial<FeatureToggles>) };
+  }
+  return { ...DEFAULT_FEATURES };
+}
+
+function startToolbar(): void {
+  if (detector && toolbar) return;
+
+  toolbar = new FloatingToolbar({
+    onPolishClick: () => {
+      console.log(`${LOG_PREFIX} Polish clicked (handler lands in a later ticket)`);
+    },
+    onScoreClick: () => {
+      console.log(`${LOG_PREFIX} Score clicked (handler lands in a later ticket)`);
+    },
+  });
+
+  detector = new TextDetector();
+  const activeToolbar = toolbar;
+  detector.onChange((field) => {
+    if (field) {
+      activeToolbar.show(field);
+    } else {
+      activeToolbar.hide();
+    }
+  });
+  detector.start();
+}
+
+function stopToolbar(): void {
+  detector?.stop();
+  detector = null;
+  toolbar?.destroy();
+  toolbar = null;
+}
+
+async function syncWithFeatures(): Promise<void> {
+  const features = await loadFeatures();
+  const anyEnabled = features.polish || features.scorer;
+  if (anyEnabled) {
+    startToolbar();
+  } else {
+    stopToolbar();
+  }
+}
+
+console.log(`${LOG_PREFIX} Content script loaded on: ${window.location.hostname}`);
+
+void syncWithFeatures();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && STORAGE_KEY_FEATURES in changes) {
+    void syncWithFeatures();
+  }
+});
