@@ -34,7 +34,7 @@ describe('ClaudeApiClient', () => {
     vi.useFakeTimers();
     client = new ClaudeApiClient();
     (chrome.storage.local.get as unknown as MockFetch).mockResolvedValue({
-      INSYSTEM_API_KEY: 'test-key',
+      agent_assist_api_key: 'test-key',
     });
     globalThis.fetch = vi.fn() as unknown as typeof fetch;
   });

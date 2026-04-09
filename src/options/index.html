@@ -6,35 +6,166 @@
     <title>Agent Assist · Settings</title>
     <style>
       :root {
+        --primary: #2563eb;
+        --success: #16a34a;
+        --danger: #dc2626;
+        --text-900: #111827;
+        --text-700: #374151;
+        --text-500: #6b7280;
+        --border: #d1d5db;
+        --surface: #f9fafb;
         font-family:
           system-ui,
           -apple-system,
           'Segoe UI',
           Roboto,
+          Helvetica,
+          Arial,
           sans-serif;
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        padding: 24px;
+        padding: 32px;
         max-width: 640px;
-        color: #111827;
+        color: var(--text-900);
         background: #ffffff;
+        line-height: 1.5;
       }
       h1 {
-        margin: 0 0 12px;
-        font-size: 20px;
-        color: #2563eb;
+        margin: 0 0 24px;
+        font-size: 24px;
+        color: var(--primary);
       }
-      p {
-        margin: 0;
+      section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      section h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      label.field {
+        display: block;
+        font-size: 13px;
+        color: var(--text-700);
+        margin-bottom: 8px;
+      }
+      input[type='password'] {
+        width: 100%;
+        padding: 8px 12px;
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 13px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #ffffff;
+      }
+      input[type='password']:focus {
+        outline: 2px solid var(--primary);
+        outline-offset: 1px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      button {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 1px solid var(--primary);
+        border-radius: 6px;
+        background: var(--primary);
+        color: #ffffff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #ffffff;
+        color: var(--primary);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .status {
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        display: none;
+      }
+      .status.visible {
+        display: block;
+      }
+      .status.success {
+        background: #dcfce7;
+        color: var(--success);
+      }
+      .status.error {
+        background: #fee2e2;
+        color: var(--danger);
+      }
+      .status.info {
+        background: #dbeafe;
+        color: var(--primary);
+      }
+      .feature {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .feature:last-child {
+        border-bottom: none;
+      }
+      .feature input[type='checkbox'] {
+        margin-top: 3px;
+        width: 16px;
+        height: 16px;
+        accent-color: var(--primary);
+        cursor: pointer;
+      }
+      .feature .meta {
+        flex: 1;
+      }
+      .feature .name {
+        font-weight: 500;
         font-size: 14px;
-        color: #374151;
+      }
+      .feature .desc {
+        font-size: 12px;
+        color: var(--text-500);
       }
     </style>
   </head>
   <body>
     <h1>Agent Assist Settings</h1>
-    <p>Settings page placeholder — API key and feature toggles coming soon.</p>
+
+    <section aria-labelledby="api-key-heading">
+      <h2 id="api-key-heading">Claude API key</h2>
+      <label class="field" for="api-key">
+        Your Claude API key is stored locally in your browser and only sent to Anthropic.
+      </label>
+      <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-..." />
+      <div class="actions">
+        <button id="save-btn" type="button">Save</button>
+        <button id="test-btn" type="button" class="secondary">Test connection</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="features-heading">
+      <h2 id="features-heading">Features</h2>
+      <div id="features"></div>
+    </section>
+
     <script type="module" src="./index.ts"></script>
   </body>
 </html>
