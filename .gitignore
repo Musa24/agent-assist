@@ -5,3 +5,4 @@ dist/
 .claude/*
 !.claude/commands/
 docs/chat_answers/
+docs/prompt_.md
