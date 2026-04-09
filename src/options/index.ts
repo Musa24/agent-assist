@@ -121,6 +121,7 @@ async function testConnection(): Promise<void> {
       headers: {
         'x-api-key': key,
         'anthropic-version': ANTHROPIC_VERSION,
+        'anthropic-dangerous-direct-browser-access': 'true',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
