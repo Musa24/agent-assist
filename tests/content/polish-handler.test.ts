@@ -1,7 +1,7 @@
 /**
  * Unit tests for the PolishHandler.
- * Fakes the detector + toolbar (structural typing) and mocks
- * chrome.runtime.sendMessage via the existing test setup.
+ * Uses structural typing for the detector + toolbar fakes, plus the
+ * existing chrome.runtime.sendMessage stub from tests/setup.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -12,8 +12,12 @@ import {
 } from '../../src/content/polish-handler';
 
 type MockFn = ReturnType<typeof vi.fn>;
+type FakeToolbar = PolishToolbar & { [K in keyof PolishToolbar]: MockFn };
 
-function makeField(value: string, type: 'input' | 'textarea' | 'contenteditable' = 'input'): HTMLElement {
+function makeField(
+  value: string,
+  type: 'input' | 'textarea' | 'contenteditable' = 'input',
+): HTMLElement {
   if (type === 'input') {
     const el = document.createElement('input');
     el.type = 'text';
@@ -48,13 +52,27 @@ function makeDetector(field: HTMLElement | null, text: string): PolishDetector {
   };
 }
 
-function makeToolbar(): PolishToolbar & { [K in keyof PolishToolbar]: MockFn } {
+function makeToolbar(): FakeToolbar {
   return {
     setPolishLoading: vi.fn(),
-    showUndo: vi.fn(),
-    hideUndo: vi.fn(),
+    showPreview: vi.fn(),
+    hidePreview: vi.fn(),
     showError: vi.fn(),
     clearStatus: vi.fn(),
+  };
+}
+
+function capturePreviewCallbacks(toolbar: FakeToolbar): {
+  accept: () => void;
+  reject: () => void;
+  text: string;
+} {
+  expect(toolbar.showPreview).toHaveBeenCalledTimes(1);
+  const call = toolbar.showPreview.mock.calls[0];
+  return {
+    text: call[0] as string,
+    accept: call[1] as () => void,
+    reject: call[2] as () => void,
   };
 }
 
@@ -101,7 +119,7 @@ describe('PolishHandler', () => {
     document.body.innerHTML = '';
   });
 
-  it('replaces field text with the polished result and shows Undo', async () => {
+  it('does not touch the field until Accept is clicked', async () => {
     const field = makeField('hi ur bet was voided');
     const detector = makeDetector(field, 'hi ur bet was voided');
     const toolbar = makeToolbar();
@@ -113,13 +131,52 @@ describe('PolishHandler', () => {
 
     await handler.handleClick();
 
+    // The preview was shown with the polished text, but the field is untouched.
+    expect(readField(field)).toBe('hi ur bet was voided');
+    const { text, accept } = capturePreviewCallbacks(toolbar);
+    expect(text).toBe('Hi, your bet was voided.');
+
+    // Accept writes the polished text into the field.
+    accept();
     expect(readField(field)).toBe('Hi, your bet was voided.');
-    expect(toolbar.setPolishLoading).toHaveBeenNthCalledWith(1, true);
-    expect(toolbar.setPolishLoading).toHaveBeenLastCalledWith(false);
-    expect(toolbar.showUndo).toHaveBeenCalledTimes(1);
+    expect(toolbar.hidePreview).toHaveBeenCalled();
   });
 
-  it('works for <textarea> with multiline Swahili text', async () => {
+  it('Reject leaves the field unchanged and hides the preview', async () => {
+    const field = makeField('original');
+    const detector = makeDetector(field, 'original');
+    const toolbar = makeToolbar();
+    (chrome.runtime.sendMessage as unknown as MockFn).mockResolvedValue({
+      success: true,
+      result: 'Rewritten version.',
+    });
+    const handler = new PolishHandler(detector, toolbar);
+
+    await handler.handleClick();
+    const { reject } = capturePreviewCallbacks(toolbar);
+    reject();
+
+    expect(readField(field)).toBe('original');
+    expect(toolbar.hidePreview).toHaveBeenCalled();
+  });
+
+  it('toggles loading state on the toolbar', async () => {
+    const field = makeField('hi');
+    const detector = makeDetector(field, 'hi');
+    const toolbar = makeToolbar();
+    (chrome.runtime.sendMessage as unknown as MockFn).mockResolvedValue({
+      success: true,
+      result: 'Hi.',
+    });
+    const handler = new PolishHandler(detector, toolbar);
+
+    await handler.handleClick();
+
+    expect(toolbar.setPolishLoading).toHaveBeenNthCalledWith(1, true);
+    expect(toolbar.setPolishLoading).toHaveBeenLastCalledWith(false);
+  });
+
+  it('works for <textarea> with Swahili text', async () => {
     const original = 'mteja akaunti yako iko sawa';
     const polished = 'Habari, akaunti yako iko sawa.';
     const field = makeField(original, 'textarea');
@@ -132,6 +189,8 @@ describe('PolishHandler', () => {
     const handler = new PolishHandler(detector, toolbar);
 
     await handler.handleClick();
+    const { accept } = capturePreviewCallbacks(toolbar);
+    accept();
 
     expect(readField(field)).toBe(polished);
   });
@@ -149,11 +208,13 @@ describe('PolishHandler', () => {
     const handler = new PolishHandler(detector, toolbar);
 
     await handler.handleClick();
+    const { accept } = capturePreviewCallbacks(toolbar);
+    accept();
 
     expect(readField(field)).toBe(polished);
   });
 
-  it('shows "Nothing to polish" on empty/whitespace input and skips the API call', async () => {
+  it('shows "Nothing to polish" on empty/whitespace and skips the API call', async () => {
     const field = makeField('');
     const detector = makeDetector(field, '   ');
     const toolbar = makeToolbar();
@@ -163,7 +224,7 @@ describe('PolishHandler', () => {
 
     expect(toolbar.showError).toHaveBeenCalledWith('Nothing to polish');
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
-    expect(readField(field)).toBe('');
+    expect(toolbar.showPreview).not.toHaveBeenCalled();
   });
 
   it('does nothing silently when there is no active field', async () => {
@@ -177,7 +238,7 @@ describe('PolishHandler', () => {
     expect(toolbar.showError).not.toHaveBeenCalled();
   });
 
-  it('shows the API error message when the response is a failure', async () => {
+  it('shows the API error when the response is a failure', async () => {
     const field = makeField('hello');
     const detector = makeDetector(field, 'hello');
     const toolbar = makeToolbar();
@@ -190,8 +251,8 @@ describe('PolishHandler', () => {
     await handler.handleClick();
 
     expect(toolbar.showError).toHaveBeenCalledWith('Your Claude API key is invalid.');
+    expect(toolbar.showPreview).not.toHaveBeenCalled();
     expect(readField(field)).toBe('hello');
-    expect(toolbar.showUndo).not.toHaveBeenCalled();
   });
 
   it('shows a generic error when sendMessage rejects', async () => {
@@ -204,27 +265,7 @@ describe('PolishHandler', () => {
     await handler.handleClick();
 
     expect(toolbar.showError).toHaveBeenCalled();
+    expect(toolbar.showPreview).not.toHaveBeenCalled();
     expect(readField(field)).toBe('hello');
-  });
-
-  it('undo restores the original text and clears the toolbar state', async () => {
-    const field = makeField('hi');
-    const detector = makeDetector(field, 'hi');
-    const toolbar = makeToolbar();
-    (chrome.runtime.sendMessage as unknown as MockFn).mockResolvedValue({
-      success: true,
-      result: 'Hi.',
-    });
-    const handler = new PolishHandler(detector, toolbar);
-
-    await handler.handleClick();
-    expect(readField(field)).toBe('Hi.');
-
-    const undoCallback = (toolbar.showUndo as MockFn).mock.calls[0][0] as () => void;
-    undoCallback();
-
-    expect(readField(field)).toBe('hi');
-    expect(toolbar.hideUndo).toHaveBeenCalled();
-    expect(toolbar.clearStatus).toHaveBeenCalled();
   });
 });

@@ -1,11 +1,11 @@
 /**
- * PolishHandler — wires the floating toolbar's Polish button to the
- * background service worker, handles field replacement, and tracks undo
- * state so the agent can revert if the polish is worse than the original.
+ * PolishHandler — wires the pill-bar Polish button to the background
+ * service worker, previews the polished text next to the field, and only
+ * writes the polished value on Accept. Reject dismisses the preview with
+ * the original text intact.
  */
 
 const LOG_PREFIX = '[AGENT-ASSIST]';
-const UNDO_TIMEOUT_MS = 8_000;
 const ERROR_TIMEOUT_MS = 3_000;
 
 type PolishResponse = { success: true; result: string } | { success: false; error: string };
@@ -17,8 +17,8 @@ export interface PolishDetector {
 
 export interface PolishToolbar {
   setPolishLoading(loading: boolean): void;
-  showUndo(onClick: () => void): void;
-  hideUndo(): void;
+  showPreview(text: string, onAccept: () => void, onReject: () => void): void;
+  hidePreview(): void;
   showError(message: string): void;
   clearStatus(): void;
 }
@@ -46,9 +46,6 @@ export function writeField(field: HTMLElement, text: string): void {
 export class PolishHandler {
   private detector: PolishDetector;
   private toolbar: PolishToolbar;
-  private originalText: string | null = null;
-  private targetField: HTMLElement | null = null;
-  private undoTimer: number | null = null;
 
   constructor(detector: PolishDetector, toolbar: PolishToolbar) {
     this.detector = detector;
@@ -67,6 +64,7 @@ export class PolishHandler {
 
     this.toolbar.setPolishLoading(true);
     this.toolbar.clearStatus();
+    this.toolbar.hidePreview();
 
     try {
       const response = (await chrome.runtime.sendMessage({
@@ -83,11 +81,11 @@ export class PolishHandler {
         return;
       }
 
-      this.originalText = text;
-      this.targetField = field;
-      writeField(field, response.result);
-      this.toolbar.showUndo(() => this.handleUndo());
-      this.scheduleUndoExpire();
+      this.toolbar.showPreview(
+        response.result,
+        () => this.handleAccept(field, response.result),
+        () => this.handleReject(),
+      );
     } catch (err) {
       console.error(LOG_PREFIX, 'Polish failed', err);
       this.flashError('Something went wrong');
@@ -96,30 +94,13 @@ export class PolishHandler {
     }
   }
 
-  private handleUndo(): void {
-    if (this.originalText !== null && this.targetField) {
-      writeField(this.targetField, this.originalText);
-    }
-    this.clearUndoState();
-    this.toolbar.hideUndo();
-    this.toolbar.clearStatus();
+  private handleAccept(field: HTMLElement, polished: string): void {
+    writeField(field, polished);
+    this.toolbar.hidePreview();
   }
 
-  private scheduleUndoExpire(): void {
-    if (this.undoTimer !== null) window.clearTimeout(this.undoTimer);
-    this.undoTimer = window.setTimeout(() => {
-      this.clearUndoState();
-      this.toolbar.hideUndo();
-    }, UNDO_TIMEOUT_MS);
-  }
-
-  private clearUndoState(): void {
-    if (this.undoTimer !== null) {
-      window.clearTimeout(this.undoTimer);
-      this.undoTimer = null;
-    }
-    this.originalText = null;
-    this.targetField = null;
+  private handleReject(): void {
+    this.toolbar.hidePreview();
   }
 
   private flashError(message: string): void {

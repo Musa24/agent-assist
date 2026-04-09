@@ -1,107 +1,187 @@
 /**
- * FloatingToolbar — a shadow-DOM-isolated toolbar that pins itself above
- * (or below, when there's no room) the currently focused text field.
+ * FloatingToolbar — a shadow-DOM-isolated pill capsule that pins itself to
+ * the right edge of the focused text field. Phase 1 hosts a single Polish
+ * (✨) icon button. A preview card appears below the field when the Polish
+ * result arrives, offering Accept / Reject before the field is modified.
  *
- * Exposes two primary actions — Polish (F1) and Score (F5) — plus a
- * transient Undo button that the PolishHandler shows after a successful
- * polish, and a status line for loading / error messages.
+ * Positioning strategy: the host mirrors the input's bounding rect
+ * (position: fixed, same left/top/width/height). Children are placed inside
+ * the host with absolute positioning — capsule at the right edge, preview
+ * card below the input. This keeps reposition logic trivial on scroll.
  */
 
-const HOST_ID = 'agent-assist-toolbar-host';
+const HOST_ID = 'agent-assist-host';
 
-const TOOLBAR_CSS = `
-.toolbar {
+const SHADOW_CSS = `
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #111827;
+}
+.capsule {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: none;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
   background: #ffffff;
   border: 1px solid #d1d5db;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-size: 12px;
-  color: #111827;
-  user-select: none;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  pointer-events: auto;
 }
-.actions {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
+.capsule.tall {
+  top: auto;
+  bottom: 8px;
+  transform: none;
 }
-.btn {
+.capsule.visible {
+  display: inline-flex;
+}
+.icon-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  background: #ffffff;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
   color: #2563eb;
   cursor: pointer;
-  font: inherit;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
 }
-.btn:hover:not([disabled]) {
+.icon-btn:hover:not([disabled]) {
   background: #eff6ff;
-  border-color: #bfdbfe;
 }
-.btn:active:not([disabled]) {
+.icon-btn:active:not([disabled]) {
   background: #dbeafe;
 }
-.btn:focus-visible {
+.icon-btn:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 1px;
 }
-.btn[disabled] {
-  opacity: 0.6;
+.icon-btn[disabled] {
   cursor: not-allowed;
+  opacity: 0.7;
 }
-.btn.undo {
-  color: #374151;
-}
-.status {
-  display: none;
-  padding: 2px 6px 0;
-  font-size: 11px;
-  line-height: 1.3;
-}
-.status.visible {
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
   display: block;
 }
-.status.error {
-  color: #dc2626;
+.icon-btn.loading svg {
+  animation: aa-pulse 1.2s ease-in-out infinite;
 }
-.status.success {
-  color: #16a34a;
+@keyframes aa-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.85); }
 }
-.status.info {
+.preview {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 280px;
+  max-width: min(520px, 100vw - 24px);
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+  pointer-events: auto;
+}
+.preview.visible {
+  display: flex;
+}
+.preview-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.preview-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #111827;
+  line-height: 1.45;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn {
+  padding: 6px 12px;
+  font: inherit;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-accept {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+.btn-accept:hover { background: #1d4ed8; }
+.btn-reject {
+  background: #ffffff;
   color: #374151;
+  border-color: #d1d5db;
 }
+.btn-reject:hover { background: #f3f4f6; }
+.status {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 6px;
+  display: none;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 6px;
+  pointer-events: auto;
+}
+.status.visible { display: block; }
+.status.error   { color: #dc2626; background: #fee2e2; border: 1px solid #fecaca; }
+.status.success { color: #16a34a; background: #dcfce7; border: 1px solid #bbf7d0; }
+`;
+
+const POLISH_ICON_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 3 L13.6 10.4 L21 12 L13.6 13.6 L12 21 L10.4 13.6 L3 12 L10.4 10.4 Z"/>
+</svg>
 `;
 
 export interface ToolbarCallbacks {
   onPolishClick: () => void;
-  onScoreClick: () => void;
 }
 
-type StatusKind = 'error' | 'success' | 'info';
-
-const TOOLBAR_HEIGHT_PX = 44;
-const SPACING_PX = 6;
 const MAX_Z_INDEX = 2147483647;
-const POLISH_LABEL_IDLE = '✨ Polish';
-const POLISH_LABEL_LOADING = '✨ Polishing…';
+const TALL_FIELD_THRESHOLD_PX = 60;
 
 export class FloatingToolbar {
   private host: HTMLElement | null = null;
-  private root: HTMLDivElement | null = null;
-  private actions: HTMLDivElement | null = null;
+  private capsule: HTMLDivElement | null = null;
   private polishBtn: HTMLButtonElement | null = null;
-  private undoBtn: HTMLButtonElement | null = null;
+  private previewEl: HTMLDivElement | null = null;
+  private previewTextEl: HTMLDivElement | null = null;
+  private previewAcceptBtn: HTMLButtonElement | null = null;
+  private previewRejectBtn: HTMLButtonElement | null = null;
   private statusEl: HTMLDivElement | null = null;
   private anchor: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
@@ -111,10 +191,12 @@ export class FloatingToolbar {
     this.callbacks = callbacks;
   }
 
+  // ----- show / hide / destroy -----
+
   show(anchor: HTMLElement): void {
     this.ensureMounted();
     this.anchor = anchor;
-    if (this.root) this.root.style.display = 'flex';
+    if (this.capsule) this.capsule.classList.add('visible');
     this.reposition();
     window.addEventListener('scroll', this.onScrollOrResize, true);
     window.addEventListener('resize', this.onScrollOrResize);
@@ -122,7 +204,9 @@ export class FloatingToolbar {
 
   hide(): void {
     this.anchor = null;
-    if (this.root) this.root.style.display = 'none';
+    if (this.capsule) this.capsule.classList.remove('visible');
+    this.hidePreview();
+    this.clearStatus();
     window.removeEventListener('scroll', this.onScrollOrResize, true);
     window.removeEventListener('resize', this.onScrollOrResize);
   }
@@ -131,10 +215,12 @@ export class FloatingToolbar {
     this.hide();
     this.host?.remove();
     this.host = null;
-    this.root = null;
-    this.actions = null;
+    this.capsule = null;
     this.polishBtn = null;
-    this.undoBtn = null;
+    this.previewEl = null;
+    this.previewTextEl = null;
+    this.previewAcceptBtn = null;
+    this.previewRejectBtn = null;
     this.statusEl = null;
   }
 
@@ -144,38 +230,38 @@ export class FloatingToolbar {
     this.ensureMounted();
     if (!this.polishBtn) return;
     this.polishBtn.disabled = loading;
-    this.polishBtn.textContent = loading ? POLISH_LABEL_LOADING : POLISH_LABEL_IDLE;
+    this.polishBtn.classList.toggle('loading', loading);
+    this.polishBtn.setAttribute('aria-busy', loading ? 'true' : 'false');
   }
 
-  // ----- Undo button -----
+  // ----- Preview / Accept / Reject -----
 
-  showUndo(onClick: () => void): void {
+  showPreview(text: string, onAccept: () => void, onReject: () => void): void {
     this.ensureMounted();
-    if (!this.actions) return;
-    this.hideUndo();
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn undo';
-    btn.textContent = '↶ Undo';
-    btn.setAttribute('aria-label', 'Undo polish');
-    btn.addEventListener('mousedown', (event) => event.preventDefault());
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      onClick();
-    });
-    // Insert after Polish button (if present), otherwise at the start.
-    if (this.polishBtn && this.polishBtn.nextSibling) {
-      this.actions.insertBefore(btn, this.polishBtn.nextSibling);
-    } else {
-      this.actions.append(btn);
+    if (!this.previewEl || !this.previewTextEl || !this.previewAcceptBtn || !this.previewRejectBtn) {
+      return;
     }
-    this.undoBtn = btn;
+    this.clearStatus();
+    this.previewTextEl.textContent = text;
+    this.previewEl.classList.add('visible');
+
+    // Replace handlers each time so we only ever invoke the latest one.
+    this.previewAcceptBtn.onclick = (event): void => {
+      event.preventDefault();
+      onAccept();
+    };
+    this.previewRejectBtn.onclick = (event): void => {
+      event.preventDefault();
+      onReject();
+    };
   }
 
-  hideUndo(): void {
-    if (!this.undoBtn) return;
-    this.undoBtn.remove();
-    this.undoBtn = null;
+  hidePreview(): void {
+    if (!this.previewEl) return;
+    this.previewEl.classList.remove('visible');
+    if (this.previewTextEl) this.previewTextEl.textContent = '';
+    if (this.previewAcceptBtn) this.previewAcceptBtn.onclick = null;
+    if (this.previewRejectBtn) this.previewRejectBtn.onclick = null;
   }
 
   // ----- Status line -----
@@ -194,9 +280,9 @@ export class FloatingToolbar {
     this.statusEl.textContent = '';
   }
 
-  // ----- Mounting -----
+  // ----- Internals -----
 
-  private setStatus(kind: StatusKind, message: string): void {
+  private setStatus(kind: 'error' | 'success', message: string): void {
     this.ensureMounted();
     if (!this.statusEl) return;
     this.statusEl.className = `status visible ${kind}`;
@@ -213,6 +299,8 @@ export class FloatingToolbar {
       'position: fixed !important',
       'top: 0 !important',
       'left: 0 !important',
+      'width: 0 !important',
+      'height: 0 !important',
       `z-index: ${MAX_Z_INDEX} !important`,
       'pointer-events: none !important',
     ].join('; ');
@@ -220,60 +308,83 @@ export class FloatingToolbar {
 
     const shadow = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
-    style.textContent = TOOLBAR_CSS;
+    style.textContent = SHADOW_CSS;
     shadow.appendChild(style);
 
     const root = document.createElement('div');
-    root.className = 'toolbar';
-    root.style.pointerEvents = 'auto';
-    root.setAttribute('role', 'toolbar');
-    root.setAttribute('aria-label', 'Agent Assist actions');
+    root.className = 'root';
 
-    const actions = document.createElement('div');
-    actions.className = 'actions';
+    const capsule = document.createElement('div');
+    capsule.className = 'capsule';
+    capsule.setAttribute('role', 'toolbar');
+    capsule.setAttribute('aria-label', 'Agent Assist actions');
 
-    const polish = this.makeButton(POLISH_LABEL_IDLE, 'Polish draft reply', this.callbacks.onPolishClick);
-    const score = this.makeButton('📊 Score', 'Score draft reply', this.callbacks.onScoreClick);
-    actions.append(polish, score);
+    const polishBtn = document.createElement('button');
+    polishBtn.type = 'button';
+    polishBtn.className = 'icon-btn polish';
+    polishBtn.setAttribute('aria-label', 'Polish draft reply');
+    polishBtn.title = 'Polish';
+    polishBtn.innerHTML = POLISH_ICON_SVG;
+    polishBtn.addEventListener('mousedown', (event) => event.preventDefault());
+    polishBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.callbacks.onPolishClick();
+    });
+    capsule.appendChild(polishBtn);
+
+    const preview = document.createElement('div');
+    preview.className = 'preview';
+    preview.setAttribute('role', 'dialog');
+    preview.setAttribute('aria-label', 'Polished reply preview');
+
+    const previewLabel = document.createElement('div');
+    previewLabel.className = 'preview-label';
+    previewLabel.textContent = 'Polished reply';
+
+    const previewText = document.createElement('div');
+    previewText.className = 'preview-text';
+
+    const previewActions = document.createElement('div');
+    previewActions.className = 'preview-actions';
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-reject';
+    rejectBtn.textContent = 'Reject';
+    rejectBtn.addEventListener('mousedown', (event) => event.preventDefault());
+    const acceptBtn = document.createElement('button');
+    acceptBtn.type = 'button';
+    acceptBtn.className = 'btn btn-accept';
+    acceptBtn.textContent = 'Accept';
+    acceptBtn.addEventListener('mousedown', (event) => event.preventDefault());
+    previewActions.append(rejectBtn, acceptBtn);
+
+    preview.append(previewLabel, previewText, previewActions);
 
     const status = document.createElement('div');
     status.className = 'status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
 
-    root.append(actions, status);
+    root.append(capsule, preview, status);
     shadow.appendChild(root);
 
     this.host = host;
-    this.root = root;
-    this.actions = actions;
-    this.polishBtn = polish;
+    this.capsule = capsule;
+    this.polishBtn = polishBtn;
+    this.previewEl = preview;
+    this.previewTextEl = previewText;
+    this.previewAcceptBtn = acceptBtn;
+    this.previewRejectBtn = rejectBtn;
     this.statusEl = status;
-    void score; // score button handled entirely via callbacks, no stored ref needed
-  }
-
-  private makeButton(label: string, ariaLabel: string, onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn';
-    btn.textContent = label;
-    btn.setAttribute('aria-label', ariaLabel);
-    btn.addEventListener('mousedown', (event) => {
-      event.preventDefault();
-    });
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      onClick();
-    });
-    return btn;
   }
 
   private reposition(): void {
-    if (!this.host || !this.anchor) return;
+    if (!this.host || !this.anchor || !this.capsule) return;
     const rect = this.anchor.getBoundingClientRect();
-    const fitsAbove = rect.top - TOOLBAR_HEIGHT_PX - SPACING_PX > 0;
-    const top = fitsAbove ? rect.top - TOOLBAR_HEIGHT_PX - SPACING_PX : rect.bottom + SPACING_PX;
-    const left = Math.max(0, rect.left);
-    this.host.style.transform = `translate(${left}px, ${Math.max(0, top)}px)`;
+    this.host.style.top = `${rect.top}px`;
+    this.host.style.left = `${rect.left}px`;
+    this.host.style.width = `${rect.width}px`;
+    this.host.style.height = `${rect.height}px`;
+    this.capsule.classList.toggle('tall', rect.height > TALL_FIELD_THRESHOLD_PX);
   }
 }

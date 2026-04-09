@@ -30,9 +30,6 @@ function startToolbar(): void {
     onPolishClick: () => {
       if (polishHandler) void polishHandler.handleClick();
     },
-    onScoreClick: () => {
-      console.log(`${LOG_PREFIX} Score clicked (handler lands in a later ticket)`);
-    },
   });
 
   detector = new TextDetector();
@@ -59,8 +56,7 @@ function stopToolbar(): void {
 
 async function syncWithFeatures(): Promise<void> {
   const features = await loadFeatures();
-  const anyEnabled = features.polish || features.scorer;
-  if (anyEnabled) {
+  if (features.polish) {
     startToolbar();
   } else {
     stopToolbar();
