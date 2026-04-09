@@ -101,6 +101,12 @@ const SHADOW_CSS = `
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
   pointer-events: auto;
 }
+.preview.above {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
 .preview.visible {
   display: flex;
 }
@@ -173,6 +179,8 @@ export interface ToolbarCallbacks {
 
 const MAX_Z_INDEX = 2147483647;
 const TALL_FIELD_THRESHOLD_PX = 60;
+const PREVIEW_MIN_SPACE_PX = 220;
+const PREVIEW_VIEWPORT_MARGIN_PX = 12;
 
 export class FloatingToolbar {
   private host: HTMLElement | null = null;
@@ -254,6 +262,10 @@ export class FloatingToolbar {
       event.preventDefault();
       onReject();
     };
+
+    // Re-run positioning now that the preview is in the viewport flow so we
+    // flip above the field if there isn't enough room below.
+    this.reposition();
   }
 
   hidePreview(): void {
@@ -386,5 +398,26 @@ export class FloatingToolbar {
     this.host.style.width = `${rect.width}px`;
     this.host.style.height = `${rect.height}px`;
     this.capsule.classList.toggle('tall', rect.height > TALL_FIELD_THRESHOLD_PX);
+    this.positionPreview(rect);
+  }
+
+  /**
+   * Flip the preview card above the field when there isn't enough room
+   * below it in the viewport, and constrain its max-height so the Accept /
+   * Reject buttons are always visible on-screen.
+   */
+  private positionPreview(rect: DOMRect): void {
+    if (!this.previewEl || !this.previewTextEl) return;
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom - PREVIEW_VIEWPORT_MARGIN_PX;
+    const spaceAbove = rect.top - PREVIEW_VIEWPORT_MARGIN_PX;
+    const flipAbove = spaceBelow < PREVIEW_MIN_SPACE_PX && spaceAbove > spaceBelow;
+    this.previewEl.classList.toggle('above', flipAbove);
+
+    const available = Math.max(PREVIEW_MIN_SPACE_PX, flipAbove ? spaceAbove : spaceBelow);
+    // Reserve ~90px for label + actions + padding; the rest is text height.
+    const textMax = Math.max(80, available - 90);
+    this.previewTextEl.style.maxHeight = `${textMax}px`;
+    this.previewTextEl.style.overflowY = 'auto';
   }
 }
