@@ -24,12 +24,12 @@ import {
   SCREENSHOT_PROMPT_V1,
   SENTIMENT_PROMPT_V1,
 } from './prompts';
+import { STORAGE_KEY_API_KEY } from './constants';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const MODEL = 'claude-sonnet-4-20250514';
 const TIMEOUT_MS = 30_000;
-const API_KEY_STORAGE_KEY = 'INSYSTEM_API_KEY';
 
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
 const RETRYABLE_CODES = new Set<ApiErrorCode>(['NETWORK', 'RATE_LIMIT']);
@@ -153,8 +153,8 @@ export class ClaudeApiClient {
 // ----- Helpers -----
 
 async function getApiKey(): Promise<string> {
-  const result = await chrome.storage.local.get(API_KEY_STORAGE_KEY);
-  const key = (result as Record<string, unknown>)[API_KEY_STORAGE_KEY];
+  const result = await chrome.storage.local.get(STORAGE_KEY_API_KEY);
+  const key = (result as Record<string, unknown>)[STORAGE_KEY_API_KEY];
   if (typeof key !== 'string' || key.length === 0) {
     throw new AuthError('No API key set');
   }
