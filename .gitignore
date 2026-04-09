@@ -2,8 +2,5 @@ node_modules/
 dist/
 .env
 *.log
-*.crx
-*.zip
-*.pem
-.claude/
-coverage/
+.claude/*
+!.claude/commands/
