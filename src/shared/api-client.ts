@@ -18,7 +18,7 @@ import {
 } from './types';
 import {
   LOOKUP_PROMPT_V1,
-  POLISH_PROMPT_V3,
+  POLISH_PROMPT_V4,
   PromptTemplate,
   SCORER_PROMPT_V1,
   SCREENSHOT_PROMPT_V1,
@@ -52,7 +52,7 @@ type ContentBlock = TextBlock | ImageBlock;
 
 export class ClaudeApiClient {
   async polishText(text: string): Promise<string> {
-    return this._callApi(POLISH_PROMPT_V3, [{ type: 'text', text }], (raw) => raw.trim());
+    return this._callApi(POLISH_PROMPT_V4, [{ type: 'text', text }], (raw) => raw.trim());
   }
 
   async analyzeScreenshot(
