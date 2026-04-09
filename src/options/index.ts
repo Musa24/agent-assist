@@ -2,4 +2,4 @@
  * Options page entry point.
  * API key setup, connection test, feature toggles, and feedback log export.
  */
-export {};
+console.log('[AGENT-ASSIST] Options page loaded');
